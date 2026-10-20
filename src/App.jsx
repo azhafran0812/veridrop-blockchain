@@ -3,12 +3,13 @@ import { Star, Diamond, Gift, Clock, Droplets, Ticket, ChevronDown, PackageOpen,
 import { ethers } from 'ethers'; 
 
 // === SETUP SMART CONTRACT ===
-const CONTRACT_ADDRESS = "0x1cc595c8A2cc04BECc7B28F6bd10B2D3B17acb00"; 
+const CONTRACT_ADDRESS = "0x1FE90594a49c527e30fa0EB1186A8E48a9Cd3De4"; 
 
 const CONTRACT_ABI = [
   "function getPlayerPityCounter(address player, uint256 bannerId) view returns (uint256)",
+  "function getPullHistory(address player) view returns (tuple(uint256 bannerId, string rewardResult, uint256 timestamp)[])",
   "function recordGachaPull(address player, uint256 bannerId, string rewardName, bool isRareReward)",
-  "function recordBatchGachaPull(address player, uint256 bannerId, string[] rewardNames, bool[] isRareRewards)", // <-- TAMBAHAN BARU
+  "function recordBatchGachaPull(address player, uint256 bannerId, string[] rewardNames, bool[] isRareRewards)", 
   "function registerPlayer(address player, string username)",
   "function createBanner(uint256 bannerId, string name, string gachaType, uint256 cost)"
 ];
@@ -61,6 +62,9 @@ export default function App() {
     }
   });
 
+  const [searchAddress, setSearchAddress] = useState("");
+  const [viewingAddress, setViewingAddress] = useState("");
+
   const historyEndRef = useRef(null);
 
   useEffect(() => {
@@ -68,6 +72,14 @@ export default function App() {
       historyEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [history]);
+
+  
+  const getRewardType = (name) => {
+    if (HEROES.includes(name)) return 'hero';
+    if (name.includes('Diamond')) return 'currency';
+    if (name.includes('Acorn')) return 'acorn';
+    return 'item';
+  };
 
   // === FUNGSI KONEKSI METAMASK ===
   const connectWallet = async () => {
@@ -77,18 +89,68 @@ export default function App() {
         const signer = await provider.getSigner();
         const address = await signer.getAddress();
         setWalletAddress(address);
+        setViewingAddress(address); 
 
         const veriDropContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
         setContract(veriDropContract);
 
+        // Tarik data Pity
         const initialPity = await veriDropContract.getPlayerPityCounter(address, BANNER_ID);
         setPityCounter(Number(initialPity));
+
+        // Tarik data Pull History dari Blockchain
+        const rawHistory = await veriDropContract.getPullHistory(address);
+        const formattedHistory = rawHistory.map((pull, index) => ({
+          id: Number(pull.timestamp) + index, // Bikin ID unik
+          reward: {
+            name: pull.rewardResult,
+            type: getRewardType(pull.rewardResult)
+          }
+        }));
+        setHistory(formattedHistory);
+
       } catch (error) {
         console.error("Gagal connect MetaMask:", error);
         alert("Gagal konek ke MetaMask.");
       }
     } else {
       alert("Tolong install MetaMask dulu!");
+    }
+  };
+
+  const searchPlayer = async () => {
+    if (!contract) {
+      alert("Harap connect MetaMask terlebih dahulu untuk membaca blockchain!");
+      return;
+    }
+    
+    // Validasi format alamat
+    if (!ethers.isAddress(searchAddress)) {
+      alert("Format alamat dompet tidak valid!");
+      return;
+    }
+
+    try {
+      // Tarik data Pity orang lain (Read-only, gratis tanpa gas fee)
+      const searchedPity = await contract.getPlayerPityCounter(searchAddress, BANNER_ID);
+      setPityCounter(Number(searchedPity));
+
+      // Tarik riwayat Gacha orang lain
+      const rawHistory = await contract.getPullHistory(searchAddress);
+      const formattedHistory = rawHistory.map((pull, index) => ({
+        id: Number(pull.timestamp) + index,
+        reward: {
+          name: pull.rewardResult,
+          type: getRewardType(pull.rewardResult)
+        }
+      }));
+      
+      setHistory(formattedHistory);
+      setViewingAddress(searchAddress);
+      alert(`Sukses menarik data milik: ${searchAddress.substring(0,8)}...`);
+    } catch (error) {
+      console.error("Gagal menarik data:", error);
+      alert("Gagal. Pastikan alamat terdaftar di jaringan.");
     }
   };
 
@@ -313,6 +375,41 @@ export default function App() {
               Stargaze Station
             </h1>
             <p className="text-slate-400 text-sm mb-6">Web3 Gacha Simulation (VeriDrop Smart Contract)</p>
+            {/* === FITUR AUDIT KOMUNITAS === */}
+            <div className="bg-slate-900/60 rounded-xl p-4 mb-8 border border-slate-700/50">
+              <label className="block text-xs font-semibold text-blue-400 mb-2 uppercase tracking-wider">
+                Public Audit: Cari Data Pemain Lain
+              </label>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  placeholder="Masukkan alamat dompet (0x...)" 
+                  value={searchAddress}
+                  onChange={(e) => setSearchAddress(e.target.value)}
+                  className="flex-1 bg-slate-800 border border-slate-600 text-white rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                />
+                <button 
+                  onClick={searchPlayer}
+                  className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold text-sm shadow-lg transition-all"
+                >
+                  Cari
+                </button>
+              </div>
+              
+              {/* Peringatan jika sedang melihat data orang lain */}
+              {viewingAddress && viewingAddress !== walletAddress && (
+                <div className="mt-3 text-xs text-yellow-400 bg-yellow-900/20 p-2 rounded border border-yellow-700/50 flex justify-between items-center">
+                  <span>⚠️ Menampilkan Pity & History milik: <span className="font-mono">{viewingAddress.substring(0,6)}...{viewingAddress.substring(viewingAddress.length - 4)}</span></span>
+                  <button 
+                    onClick={connectWallet} 
+                    className="text-blue-400 hover:text-blue-300 underline font-semibold"
+                  >
+                    Kembali ke Akunku
+                  </button>
+                </div>
+              )}
+            </div>
+            {/* ============================= */}
 
             <div className="flex flex-col md:flex-row gap-4 items-end mb-8 relative z-10">
               <div className="flex-1 w-full">
