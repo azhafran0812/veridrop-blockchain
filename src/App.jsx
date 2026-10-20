@@ -93,6 +93,7 @@ export default function App() {
 
         const veriDropContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
         setContract(veriDropContract);
+        
 
         // Tarik data Pity
         const initialPity = await veriDropContract.getPlayerPityCounter(address, BANNER_ID);
@@ -108,7 +109,8 @@ export default function App() {
           }
         }));
         setHistory(formattedHistory);
-
+        rebuildInventory(formattedHistory);
+        
       } catch (error) {
         console.error("Gagal connect MetaMask:", error);
         alert("Gagal konek ke MetaMask.");
@@ -147,6 +149,7 @@ export default function App() {
       
       setHistory(formattedHistory);
       setViewingAddress(searchAddress);
+      rebuildInventory(formattedHistory);
       alert(`Sukses menarik data milik: ${searchAddress.substring(0,8)}...`);
     } catch (error) {
       console.error("Gagal menarik data:", error);
@@ -248,6 +251,37 @@ export default function App() {
       }
       return newInv;
     });
+  };
+
+  // Fungsi untuk menghitung ulang isi inventory dari riwayat blockchain
+  const rebuildInventory = (historyData) => {
+    const newInv = {
+      heroes: {},
+      items: { 'Temporal Essence': 0, 'Tidal Essence': 0, 'Diamond': 0, 'Omni-Acorn': 0 }
+    };
+    let tickets = 0;
+
+    historyData.forEach(pull => {
+      const reward = pull.reward;
+      tickets += 15; // Setiap 1 tarikan = 15 Dolly Tickets
+      
+      if (reward.type === 'hero') {
+        newInv.heroes[reward.name] = (newInv.heroes[reward.name] || 0) + 1;
+      } else {
+        if (reward.name.includes('Temporal Essence')) {
+          newInv.items['Temporal Essence'] += parseInt(reward.name.split('x')[1]);
+        } else if (reward.name.includes('Tidal Essence')) {
+          newInv.items['Tidal Essence'] += parseInt(reward.name.split('x')[1]);
+        } else if (reward.name.includes('Diamond')) {
+          newInv.items['Diamond'] += parseInt(reward.name.split('x')[1].replace(',', ''));
+        } else if (reward.name.includes('Omni-Acorn')) {
+          newInv.items['Omni-Acorn'] += parseInt(reward.name.split('x')[1]);
+        }
+      }
+    });
+
+    setInventory(newInv);
+    setDollyTickets(tickets);
   };
 
   const handlePull = async (times) => {
